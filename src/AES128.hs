@@ -1,6 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module AES128 where
+module AES128 (EncodingException,
+               pkcs7,
+               stripPkcs7,
+               encodeAES128ECB,
+               decodeAES128ECB,
+               encodeAES128CBC,
+               decodeAES128CBC,
+               encodeAES128CTR,
+               decodeAES128CTR
+               ) where
 
 import           Encodings
 import qualified Data.ByteString.Lazy as B
@@ -8,6 +17,7 @@ import qualified Data.ByteString.Lazy.Char8 as C (unpack, lines)
 import           Data.Bits
 import           Data.Array
 import           Control.Exception
+import           Data.List (unfoldr)
 
 data EncodingException = PaddingException deriving Show
 
@@ -94,17 +104,19 @@ unMixColumns = B.concat . map (B.pack . mix . B.unpack) . chunksOf 4
 
 pkcs7 :: Int64 -> ByteString -> ByteString
 pkcs7 n b = B.append b (B.pack $ replicate (fromIntegral diff) (fromIntegral diff))
-  where diff = mod (n - B.length b) n
+  where diff = 1 + mod (n - B.length b - 1) n
 
-stripPkcs7 :: ByteString -> ByteString
-stripPkcs7 s
+stripPkcs7 :: Int64 -> ByteString -> ByteString
+stripPkcs7 k s
   | B.length g == fromIntegral (B.head g) = B.concat $ init $ B.group s
   | otherwise                             = throw PaddingException
-  where n = B.length s
-        g = last $ B.group s
+  where g = last $ B.group $ last $ chunksOf k s
 
 encodeAES128ECB :: ByteString -> ByteString -> ByteString
-encodeAES128ECB key = B.concat . map (encodeBlockAES128 keyS) . chunksOf 16 . pkcs7 16
+encodeAES128ECB key = B.concat .
+                      map (encodeBlockAES128 keyS) .
+                      chunksOf 16 .
+                      pkcs7 16
   where keyS = keySchedule key
 
 encodeBlockAES128 :: ByteString -> ByteString -> ByteString
@@ -115,7 +127,10 @@ encodeBlockAES128 key = encode
         lastRound = xorB (last ks) . shiftRows . subBytes
 
 decodeAES128ECB :: ByteString -> ByteString -> ByteString
-decodeAES128ECB key = stripPkcs7 . B.concat . map (decodeBlockAES128 keyS) . chunksOf 16
+decodeAES128ECB key =  stripPkcs7 16 .
+                       B.concat .
+                       map (decodeBlockAES128 keyS) .
+                       chunksOf 16
   where keyS = keySchedule key
 
 decodeBlockAES128 :: ByteString -> ByteString -> ByteString
@@ -131,7 +146,18 @@ encodeAES128CBC key iv = B.concat . tail . scanl encode iv . chunksOf 16 . pkcs7
         encode prev b = encodeBlockAES128 keyS $ xorB prev b
 
 decodeAES128CBC :: ByteString -> ByteString -> ByteString -> ByteString
-decodeAES128CBC key iv b = stripPkcs7 . B.concat $ zipWith encode (iv:b') b'
+decodeAES128CBC key iv b = stripPkcs7 16 $ B.concat $ zipWith encode (iv:b') b'
   where keyS = keySchedule key
         b' = chunksOf 16 b
         encode prev b = xorB prev $ decodeBlockAES128 keyS b
+
+encodeAES128CTR :: ByteString ->
+                   s ->
+                   (s -> Maybe (ByteString, s))
+                   -> ByteString
+                   -> ByteString
+encodeAES128CTR key nonce gen =
+  xorB (B.concat $ map (encodeBlockAES128 keyS) $ unfoldr gen nonce)
+  where keyS = keySchedule key
+
+decodeAES128CTR = encodeAES128CTR

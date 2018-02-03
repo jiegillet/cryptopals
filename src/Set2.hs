@@ -175,8 +175,8 @@ ex14 = do
 -- Ex 15
 
 ex15 = do
-  print $ stripPkcs7 "ICE ICE BABY\x04\x04\x04\x04"
-  print $ stripPkcs7 "ICE ICE BABY\x05\x05\x05\x05"
+  print $ stripPkcs7 16 "ICE ICE BABY\x04\x04\x04\x04"
+  print $ stripPkcs7 16 "ICE ICE BABY\x05\x05\x05\x05"
 
 -- Ex 16
 
@@ -213,7 +213,7 @@ ex16 = do
       p = (key, iv, prefix, postfix, 2)
       encoder = encryptionOracle p . B.filter (not . flip B.elem ";=")
       decoder = decryptionOracle p
-      
+
   let cyphertext = addAdmin encoder (isAdmin decoder)
   print $ decoder cyphertext
   print $ isAdmin decoder cyphertext
