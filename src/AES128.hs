@@ -151,13 +151,9 @@ decodeAES128CBC key iv b = stripPkcs7 16 $ B.concat $ zipWith encode (iv:b') b'
         b' = chunksOf 16 b
         encode prev b = xorB prev $ decodeBlockAES128 keyS b
 
-encodeAES128CTR :: ByteString ->
-                   s ->
-                   (s -> Maybe (ByteString, s))
-                   -> ByteString
-                   -> ByteString
+encodeAES128CTR :: ByteString -> s -> (s -> (ByteString, s)) -> ByteString -> ByteString
 encodeAES128CTR key nonce gen =
-  xorB (B.concat $ map (encodeBlockAES128 keyS) $ unfoldr gen nonce)
+  xorB (B.concat $ map (encodeBlockAES128 keyS) $ unfoldr (Just . gen) nonce)
   where keyS = keySchedule key
 
 decodeAES128CTR = encodeAES128CTR

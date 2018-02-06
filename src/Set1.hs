@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Set1 (charFrequencies) where
+module Set1 (charFrequencies, singleByteXor) where
 
 import           Encodings
 import qualified Data.Map                   as M
