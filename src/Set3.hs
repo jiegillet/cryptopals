@@ -138,3 +138,12 @@ mt19937 (x:xs) = (tempering x, xs)
   (s, b) = (7,  0x9D2C5680)
   (t, c) = (15, 0xEFC60000)
   l = 18
+
+-- ex 22
+
+invSeedMT19937 :: Word32 -> [Word32]
+invSeedMT19937 sn = s
+  where s = sn : zipWith (\x i -> let y=fi*(x-i) in y `xor` shiftR y (w-2)) s [n-1,n-2..1]
+        (w, n, m, r) = (32, 624, 397, 31)
+        f = 1812433253
+        fi = f^0x7FFFFFFF
