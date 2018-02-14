@@ -14,6 +14,9 @@ import           Control.Monad (filterM)
 import           Data.Function (on)
 import           Data.Bits
 import           Data.List (maximumBy)
+import           Data.Time.Clock.POSIX
+import           Test.QuickCheck (quickCheck)
+
 
 -- Ex 17
 
@@ -130,16 +133,43 @@ mkSeedMT19937 s0 = drop (fromIntegral n) x
         f = 1812433253
 
 mt19937 :: [Word32] -> (Word32, [Word32])
-mt19937 (x:xs) = (tempering x, xs)
-  where
-  tempering = (\y -> xor y (shiftR y l)) . (\y -> xor y (c .&. shiftL y t)) .
+mt19937 (x:xs) = (temper19937 x, xs)
+
+temper19937 :: Word32 -> Word32
+temper19937 = (\y -> xor y (shiftR y l)) . (\y -> xor y (c .&. shiftL y t)) .
               (\y -> xor y (b .&. shiftL y s)) . (\y -> xor y (shiftR y u))
+  where
   (u, d) = (11, 0xFFFFFFFF)
   (s, b) = (7,  0x9D2C5680)
   (t, c) = (15, 0xEFC60000)
   l = 18
 
 -- ex 22
+
+ex22 = do
+  diff <- randomRIO (40, 1000)
+  t0 <- fromIntegral . floor <$> getPOSIXTime
+  let (r, _) = mt19937 $ mkSeedMT19937 (t0 - diff)
+  t1 <- fromIntegral . floor <$> getPOSIXTime
+  print $ head $ filter ((r==) . fst . mt19937 . mkSeedMT19937) [t1,t1-1..]
+
+
+-- ex 23
+
+untemper19937 :: Word32 -> Word32
+untemper19937 = inv1 .inv2 . inv3 . inv4
+  where
+  (u, d) = (11, 0xFFFFFFFF)
+  (s, b) = (7,  0x9D2C5680)
+  (t, c) = (15, 0xEFC60000)
+  l = 18
+  inv1 = (!!3) . iterate (\y -> xor y (shiftR y u))
+  inv2 = (!!7) . iterate (\y -> xor y (b .&. shiftL y s))
+  inv3 = (!!1) . iterate (\y -> xor y (c .&. shiftL y t))
+  inv4 = (!!3) . iterate (\y -> xor y (shiftR y l))
+
+prop_tempering :: Word32 -> Bool
+prop_tempering x = x == untemper19937 (untemper19937 x)
 
 invSeedMT19937 :: Word32 -> [Word32]
 invSeedMT19937 sn = s
