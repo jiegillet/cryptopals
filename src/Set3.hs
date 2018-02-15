@@ -13,7 +13,7 @@ import           Control.Exception
 import           Control.Monad (filterM)
 import           Data.Function (on)
 import           Data.Bits
-import           Data.List (maximumBy)
+import           Data.List (maximumBy, unfoldr, tails)
 import           Data.Time.Clock.POSIX
 import           Test.QuickCheck (quickCheck)
 
@@ -139,12 +139,20 @@ temper19937 :: Word32 -> Word32
 temper19937 = (\y -> xor y (shiftR y l)) . (\y -> xor y (c .&. shiftL y t)) .
               (\y -> xor y (b .&. shiftL y s)) . (\y -> xor y (shiftR y u))
   where
-  (u, d) = (11, 0xFFFFFFFF)
+  u = 11
   (s, b) = (7,  0x9D2C5680)
   (t, c) = (15, 0xEFC60000)
   l = 18
 
 -- ex 22
+
+-- ended up not needing this :(
+invSeedMT19937 :: Word32 -> [Word32]
+invSeedMT19937 sn = s
+  where s = sn : zipWith (\x i -> let y=fi*(x-i) in y `xor` shiftR y (w-2)) s [n-1,n-2..1]
+        (w, n, m, r) = (32, 624, 397, 31)
+        f = 1812433253
+        fi = f^0x7FFFFFFF
 
 ex22 = do
   diff <- randomRIO (40, 1000)
@@ -159,21 +167,86 @@ ex22 = do
 untemper19937 :: Word32 -> Word32
 untemper19937 = inv1 .inv2 . inv3 . inv4
   where
-  (u, d) = (11, 0xFFFFFFFF)
+  u = 11
   (s, b) = (7,  0x9D2C5680)
   (t, c) = (15, 0xEFC60000)
   l = 18
   inv1 = (!!3) . iterate (\y -> xor y (shiftR y u))
   inv2 = (!!7) . iterate (\y -> xor y (b .&. shiftL y s))
-  inv3 = (!!1) . iterate (\y -> xor y (c .&. shiftL y t))
-  inv4 = (!!3) . iterate (\y -> xor y (shiftR y l))
+  inv3 = (\y -> xor y (c .&. shiftL y t))
+  inv4 = (\y -> xor y (shiftR y l))
+
+prop_inv1, prop_inv2, prop_inv3, prop_inv4 :: Word32 -> Bool
+prop_inv1 x = x == inv1 (f x)
+  where f y = xor y (shiftR y 11)
+        inv1 = (!!3) . iterate f
+prop_inv2 x = x == inv2 (f x)
+  where f y = xor y (0x9D2C5680 .&. shiftL y 7)
+        inv2 = (!!7) . iterate f
+prop_inv3 x = x == inv3 (f x)
+  where f y = xor y (0xEFC60000 .&. shiftL y 15)
+        inv3 = f
+prop_inv4 x = x == inv4 (f x)
+  where f y = xor y (shiftR y 18)
+        inv4 = f
 
 prop_tempering :: Word32 -> Bool
-prop_tempering x = x == untemper19937 (untemper19937 x)
+prop_tempering x = x == untemper19937 (temper19937 x)
 
-invSeedMT19937 :: Word32 -> [Word32]
-invSeedMT19937 sn = s
-  where s = sn : zipWith (\x i -> let y=fi*(x-i) in y `xor` shiftR y (w-2)) s [n-1,n-2..1]
-        (w, n, m, r) = (32, 624, 397, 31)
-        f = 1812433253
-        fi = f^0x7FFFFFFF
+prop_twist :: Word32 -> Bool
+prop_twist x = x == untwist (twist x)
+  where untwist x = if testBit x 31 then shiftL (xor a x) 1 + 1 else shiftL x 1
+        twist b = if testBit b 0 then a `xor` shiftR b 1 else shiftR b 1
+        a = 0x9908B0DF
+
+-- -- Misunderstood the question, this recreates the previous set of seeds
+-- getSeedState :: [Word32] -> [(Word32, Word32)] -- [Word32]
+-- getSeedState s = reverse $ take n $ drop n seed
+--   where seed = s' ++ (recouple $ zipWith combine seed (drop (n-m) seed))
+--         s' = reverse $ map untemper19937 s
+--         (w, n, m, r) = (32, 624, 397, 31)
+--         recouple = zipWith (\(b0, _) (_,b1)  -> b0 + b1) <*> tail
+--         combine xn xm = let b=untwist (xor xn xm) in (b .&. hBit, b .&. tailBit)
+--         untwist x = if testBit x 31 then shiftL (xor a x) 1 + 1 else shiftL x 1
+--         a = 0x9908B0DF
+--         (hBit, tailBit) = (bit 31, bit 31 - 1)
+
+ex23 = do
+  s <- randomIO
+  let rnds = take 624 $ unfoldr (Just . mt19937) $ mkSeedMT19937 s
+      seedState = map untemper19937 rnds
+  print $ seedState == (take 624 $ mkSeedMT19937 s)
+
+-- Ex 24
+
+splitBytes :: Word32 -> [Word8]
+splitBytes n = take 4 $ go n ++ repeat 0
+  where go 0 = []
+        go n = let (q, r) = quotRem n 256 in fromIntegral r : go q
+
+
+streamEncode :: s -> (s -> (Word32, s)) -> ByteString -> ByteString
+streamEncode s g = xorB (B.pack $ concatMap splitBytes $ unfoldr (Just . g) s)
+
+streamDecode = streamEncode
+
+findSeed :: ByteString -> ByteString -> Word32
+findSeed plain cypher =  head $ filter check [0..bit 16-1]
+  where check s = plain == streamDecode (mkSeedMT19937 s) mt19937 cypher
+
+passwordResetToken :: ByteString -> IO ByteString
+passwordResetToken email = do
+  t <- fromIntegral . floor <$> getPOSIXTime
+  return $ streamEncode (mkSeedMT19937 t) mt19937 $ B.concat ["stuff", email, "more stuff"]
+
+isMT19972TimeSeeded :: (ByteString -> IO ByteString) -> IO Bool
+isMT19972TimeSeeded pwdReset = do
+  let email = "myemail@email.com"
+  token <- pwdReset email
+  diff <- randomRIO (40, 1000)
+  t <- (+diff) . fromIntegral . floor <$> getPOSIXTime
+  let isInfix i = any (B.isPrefixOf i) . B.tails
+      goodSeed s = isInfix email $ streamDecode (mkSeedMT19937 s) mt19937 token
+  return $ any goodSeed [t,t-1..t-10000]
+
+ex24 = isMT19972TimeSeeded passwordResetToken >>= print
