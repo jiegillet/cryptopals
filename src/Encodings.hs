@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Encodings (ByteString, Int64, Word8,
+module Encodings (ByteString, Int64, Word8, Word32, Word64,
                   Base64,
                   Hex,
                   base64ToHex,
@@ -18,7 +18,7 @@ import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.Char8 as C hiding (ByteString)
 import           Data.Int (Int64)
-import           Data.Word (Word8)
+import           Data.Word (Word8, Word32, Word64)
 import qualified Data.Map as M
 import           Numeric (showHex)
 import           Data.Bits (xor)

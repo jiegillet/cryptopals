@@ -3,11 +3,8 @@
 import           Encodings
 import           AES128
 import           Set1
-import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.Char8 as C hiding (ByteString)
-import           Data.Int (Int64)
-import           Data.Word (Word8, Word32, Word64)
 import           System.Random
 import           Control.Exception
 import           Control.Monad (filterM)
@@ -16,7 +13,6 @@ import           Data.Bits
 import           Data.List (maximumBy, unfoldr, tails)
 import           Data.Time.Clock.POSIX
 import           Test.QuickCheck (quickCheck)
-
 
 -- Ex 17
 
@@ -69,18 +65,11 @@ ex17 = do
 
 -- Ex 18
 
-littleEndian :: (Integral a) => a -> [Word8]
-littleEndian i = go (fromIntegral i :: Word64) 1
-  where go _ 9 = []
-        go n k = let (q, r) = quotRem n 256 in fromIntegral r : go q (k+1)
-
 ex18 = do
   let key = "YELLOW SUBMARINE"
       seed = (0, 0)
-      format :: (Int64, Word64) -> (ByteString, (Int64, Word64))
-      format (n, c) = (B.pack $ littleEndian n ++ littleEndian c , (n, c+1))
       txt = base64ToByteString "L77na/nrFsKvynd6HzOoG7GHTLXsTVu9qvY/2syLXzhPweyyMTJULu/6/kXX0KSvoOLSFQ=="
-  print $ decodeAES128CTR key seed format txt
+  print $ decodeAES128CTR key seed txt
 
 -- ex 19
 
@@ -94,9 +83,7 @@ ex19 = do
   r <- lines <$> readFile "../doc/19.txt"
   key <- B.pack . take 16 . randoms <$> newStdGen
   let seed = (0, 0)
-      format :: (Int64, Word64) -> (ByteString, (Int64, Word64))
-      format (n, c) = (B.pack $ littleEndian n ++ littleEndian c , (n, c+1))
-      cypher = map (decodeAES128CTR key seed format . base64ToByteString) r
+      cypher = map (decodeAES128CTR key seed . base64ToByteString) r
       k = B.pack $ map bestFit $ B.transpose cypher
       plain = map (xorB k) cypher
   mapM_ C.putStrLn plain
@@ -111,9 +98,7 @@ ex20 = do
   r <- lines <$> readFile "../doc/20.txt"
   key <- B.pack . take 16 . randoms <$> newStdGen
   let seed = (0, 0)
-      format :: (Int64, Word64) -> (ByteString, (Int64, Word64))
-      format (n, c) = (B.pack $ littleEndian n ++ littleEndian c , (n, c+1))
-      cypher = map (decodeAES128CTR key seed format . base64ToByteString) r
+      cypher = map (decodeAES128CTR key seed . base64ToByteString) r
       n = maximum $ map B.length cypher
       cypher' =  map (B.take n) cypher
       (k, plain) = deXor n cypher'
@@ -199,17 +184,17 @@ prop_twist x = x == untwist (twist x)
         twist b = if testBit b 0 then a `xor` shiftR b 1 else shiftR b 1
         a = 0x9908B0DF
 
--- -- Misunderstood the question, this recreates the previous set of seeds
--- getSeedState :: [Word32] -> [(Word32, Word32)] -- [Word32]
--- getSeedState s = reverse $ take n $ drop n seed
---   where seed = s' ++ (recouple $ zipWith combine seed (drop (n-m) seed))
---         s' = reverse $ map untemper19937 s
---         (w, n, m, r) = (32, 624, 397, 31)
---         recouple = zipWith (\(b0, _) (_,b1)  -> b0 + b1) <*> tail
---         combine xn xm = let b=untwist (xor xn xm) in (b .&. hBit, b .&. tailBit)
---         untwist x = if testBit x 31 then shiftL (xor a x) 1 + 1 else shiftL x 1
---         a = 0x9908B0DF
---         (hBit, tailBit) = (bit 31, bit 31 - 1)
+-- Misunderstood the question, this should recreate the previous set of seeds
+getSeedState :: [Word32] -> [Word32]
+getSeedState s = reverse $ take n $ drop n seed
+  where seed = s' ++ (recouple $ zipWith combine seed (drop (n-m) seed))
+        s' = reverse $ map untemper19937 s
+        (w, n, m, r) = (32, 624, 397, 31)
+        recouple = zipWith (\(b0, _) (_,b1)  -> b0 + b1) <*> tail
+        combine xn xm = let b=untwist (xor xn xm) in (b .&. hBit, b .&. tailBit)
+        untwist x = if testBit x 31 then shiftL (xor a x) 1 + 1 else shiftL x 1
+        a = 0x9908B0DF
+        (hBit, tailBit) = (bit 31, bit 31 - 1)
 
 ex23 = do
   s <- randomIO
