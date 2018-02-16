@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Set2 where
+module Set2 (isAdmin, encryptionOracle, decryptionOracle) where
 
 import           Encodings
 import           AES128

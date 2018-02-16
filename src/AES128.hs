@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module AES128 (EncodingException,
+module AES128 (EncodingException (..),
                pkcs7,
                stripPkcs7,
                encodeAES128ECB,
@@ -19,7 +19,8 @@ import           Data.Array
 import           Control.Exception
 import           Data.List (unfoldr)
 
-data EncodingException = PaddingException deriving Show
+data EncodingException = PaddingException |
+                         ASCIIComplianceException ByteString deriving Show
 
 instance Exception EncodingException
 
