@@ -3,13 +3,16 @@
 import           Encodings
 import           AES128
 import           Set2
+import           Hashes
 import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.Char8 as C
 import           System.Random
 import           Control.Exception
 import           Test.QuickCheck (quickCheck)
-import           Data.List (foldl', zipWith4)
+--import           Data.List (foldl')
 import           Data.Bits
+import           Network.HTTP
+import           Data.Time.Clock.POSIX
 
 -- Ex 25
 
@@ -64,11 +67,13 @@ addAdmin encoder check = cyphertext
         (core, post) = B.splitAt 12 tmp
         cyphertext = B.concat [pre, xorB xorMe core, post]
 
+escape :: ByteString -> ByteString
+escape = B.filter (not . flip B.elem ";=")
+
 ex26 = do
   key <- B.pack . take 16 . randoms <$> newStdGen
   let prefix  = "comment1=cooking%20MCs;userdata="
       postfix = ";comment2=%20like%20a%20pound%20of%20bacon"
-      escape = B.filter (not . flip B.elem ";=")
       encoder = encodeAES128CTR key (0, 0) . (\x -> B.concat [prefix, x, postfix]) . escape
       decoder = decodeAES128CTR key (0, 0)
 
@@ -106,42 +111,80 @@ ex27 = do
 
 -- Ex 28
 
-splitInt64 :: Int64 -> [Word8]
-splitInt64 n = reverse $ take 8 $ go n
-  where go 0 = repeat 0
-        go n = let (q, r) = quotRem n 256 in fromIntegral r : go q
-
-toWord32 :: ByteString -> [Word32]
-toWord32 "" = []
-toWord32 s = B.foldl (\t b -> 256 * t + fromIntegral b) 0 a : toWord32 b
-  where (a, b) = B.splitAt 4 s
-
-fromWord32 :: [Word32] -> ByteString
-fromWord32 = B.pack . concatMap (reverse . take 4 . toWord8)
-  where toWord8 0 = repeat 0
-        toWord8 n = let (q, r) = quotRem n 256 in fromIntegral r : toWord8 q
-
 prop_words :: [Word32] -> Bool
 prop_words w = w ==  toWord32 (fromWord32 w)
 
-sha1 :: ByteString -> ByteString
-sha1 = preprocess--combine . foldl' addChunk h . chunksOf 64 . preprocess
+ex28 = do
+  let sha1MAC = sha1 . B.append "secret key"
+  print $ byteStringToHex $ sha1MAC "message"
+  print $ byteStringToHex $ sha1MAC "message "
+  print $ byteStringToHex $ sha1MAC "messagf"
+
+-- Ex 29
+
+findKeyLength :: (ByteString -> ByteString) -> Int64
+findKeyLength mac = head $ filter guess [0..]
   where
-  h = (0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0)
-  preprocess s = flip B.append end . flip B.append pad . flip B.snoc 128 $ s
-    where m1 = B.length s
-          pad = B.replicate (mod (56-(m1 + 1)) 64) 0
-          end = B.pack $ splitInt64 m1
-  combine (h0,h1,h2,h3,h4) = fromWord32 [h0,h1,h2,h3,h4]
-  addChunk hs@(h0,h1,h2,h3,h4) s = addtoH $ foldl' crunch hs $ zip [0..79] w
-    where w = toWord32 s ++ zipWith4 xor4 w (drop 2 w) (drop 8 w) (drop 13 w)
-          xor4 a b c d = (xor a b `xor` xor c d) `rotateL` 1
-          addtoH (a,b,c,d,e) = (h0+a,h1+b,h2+c,h3+d,h4+e)
-  crunch (a,b,c,d,e) (i, word) = (t, a, rotateL b 30, c, d)
-    where (f, k) = fAndK i
-          t = rotateL a 5 + f + e + k + word
-          fAndK i
-            | i < 20    = ((b .&. c) .|. ((complement b) .&. d) , 0x5A827999)
-            | i < 40    = (b `xor` c `xor` d                    , 0x6ED9EBA1)
-            | i < 60    = ((b .&. c) .|. (b .&. d) .|. (c .&. d), 0x8F1BBCDC)
-            | otherwise = (b `xor` c `xor` d                    , 0xCA62C1D6)
+  register = toWord32 $ mac ""
+  guess 0 = mac "" == sha1 ""
+  guess n = let key = B.replicate n 65
+                keyPadding = B.drop n $ padSHA1 key
+                hash1 = mac keyPadding
+                lastChunk = last $ chunksOf 64 $ padSHA1 $ padSHA1 key
+                hash2 = sha1With register lastChunk
+            in hash1 == hash2
+
+ex29 = do
+  let original = "comment1=cooking%20MCs;userdata=foo;comment2=%20like%20a%20pound%20of%20bacon"
+      addon = ";admin=true;"
+      sha1MAC = sha1 . B.append "secret key"
+
+      n = findKeyLength sha1MAC
+      fakeKey = B.replicate n 65
+      padding = B.drop n $ padSHA1 $ B.append fakeKey original
+      fakeEnd = last $ chunksOf 64 $ padSHA1 $ B.concat [fakeKey, padding, addon]
+      register = toWord32 $ sha1MAC original
+      forgedHash = sha1With register fakeEnd
+      realHash = sha1MAC $ B.append padding addon
+  print $ forgedHash == realHash
+
+-- Ex 30
+
+
+findKeyLengthMD4 :: (ByteString -> ByteString) -> Int64
+findKeyLengthMD4 mac = head $ filter guess [0..]
+  where
+  register = map littleEndian $ toWord32 $ mac ""
+  guess 0 = mac "" == md4 ""
+  guess n = let key = B.replicate n 65
+                keyPadding = B.drop n $ padMD4 key
+                hash1 = mac keyPadding
+                lastChunk = last $ chunksOf 64 $ padMD4 $ padMD4 key
+                hash2 = md4With register lastChunk
+            in hash1 == hash2
+
+ex30 = do
+  let original = "comment1=cooking%20MCs;userdata=foo;comment2=%20like%20a%20pound%20of%20bacon"
+      addon = ";admin=true;"
+      mac = md4 . B.append "secret key"
+
+      n = findKeyLengthMD4 mac
+      fakeKey = B.replicate n 65
+      padding = B.drop n $ padMD4 $ B.append fakeKey original
+      fakeEnd = last $ chunksOf 64 $ padMD4 $ B.concat [fakeKey, padding, addon]
+      register = map littleEndian $ toWord32 $ mac original
+      forgedHash = md4With register fakeEnd
+      realHash = mac $ B.append padding addon
+  print $ forgedHash == realHash
+
+-- Ex 31: run ./server first
+
+ex31 = do
+  t0 <- getPOSIXTime
+  response <- simpleHTTP (getRequest "http://localhost:8000/test?file=0eff&signature=46b4ec586117154dacd49d664e5d63fdc88efb51")
+  t1 <- getPOSIXTime
+  (c,_,_) <- getResponseCode response
+  print $ c
+  print $ t1-t0
+
+  -- getPOSIXTime

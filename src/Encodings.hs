@@ -3,6 +3,9 @@
 module Encodings (ByteString, Int64, Word8, Word32, Word64,
                   Base64,
                   Hex,
+                  splitInt64,
+                  toWord32,
+                  fromWord32,
                   base64ToHex,
                   hexToBase64,
                   base64ToByteString,
@@ -11,7 +14,8 @@ module Encodings (ByteString, Int64, Word8, Word32, Word64,
                   byteStringToHex,
                   hexXor,
                   xorB,
-                  chunksOf
+                  chunksOf,
+                  littleEndian
                   ) where
 
 import           Data.ByteString.Lazy (ByteString)
@@ -107,3 +111,23 @@ xorB a b = B.pack $ B.zipWith xor a b
 chunksOf :: Int64 -> ByteString -> [ByteString]
 chunksOf _ "" = []
 chunksOf n s  = let (a,b) = B.splitAt n s in a : chunksOf n b
+
+littleEndian :: Word32 -> Word32
+littleEndian i = go i 3
+  where go _ (-1) = 0
+        go n k = let (q, r) = quotRem n 256 in 256^k * r + go q (k-1)
+
+splitInt64 :: Int64 -> [Word8]
+splitInt64 n = reverse $ take 8 $ go n
+  where go 0 = repeat 0
+        go n = let (q, r) = quotRem n 256 in fromIntegral r : go q
+
+toWord32 :: ByteString -> [Word32]
+toWord32 "" = []
+toWord32 s = B.foldl (\t b -> 256 * t + fromIntegral b) 0 a : toWord32 b
+  where (a, b) = B.splitAt 4 s
+
+fromWord32 :: [Word32] -> ByteString
+fromWord32 = B.pack . concatMap (reverse . take 4 . toWord8)
+  where toWord8 0 = repeat 0
+        toWord8 n = let (q, r) = quotRem n 256 in fromIntegral r : toWord8 q

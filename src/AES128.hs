@@ -152,13 +152,11 @@ decodeAES128CBC key iv b = stripPkcs7 16 $ B.concat $ zipWith encode (iv:b') b'
         b' = chunksOf 16 b
         encode prev b = xorB prev $ decodeBlockAES128 keyS b
 
-littleEndian :: (Integral a) => a -> [Word8]
-littleEndian i = go (fromIntegral i :: Word64) 1
-  where go _ 9 = []
-        go n k = let (q, r) = quotRem n 256 in fromIntegral r : go q (k+1)
-
 genCTR :: (Int64, Word64) -> (ByteString, (Int64, Word64))
 genCTR (n, c) = (B.pack $ littleEndian n ++ littleEndian c , (n, c+1))
+  where littleEndian i = go (fromIntegral i :: Word64) 1
+        go _ 9 = []
+        go n k = let (q, r) = quotRem n 256 in fromIntegral r : go q (k+1)
 
 encodeAES128CTR :: ByteString -> (Int64, Word64) -> ByteString -> ByteString
 encodeAES128CTR key nonce =
