@@ -8,8 +8,9 @@ import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.Char8 as C
 import           System.Random
 import           Control.Exception
+import           Control.Monad (filterM, foldM)
 import           Test.QuickCheck (quickCheck)
---import           Data.List (foldl')
+import           Data.List (sortOn)
 import           Data.Bits
 import           Network.HTTP
 import           Data.Time.Clock.POSIX
@@ -179,12 +180,32 @@ ex30 = do
 
 -- Ex 31: run ./server first
 
+main = ex31
+
 ex31 = do
+  let file = ";user=admin;"
+  hash <- findHash file
+  print $ map byteStringToHex hash
+
+findHash :: ByteString -> IO [ByteString]
+findHash file = do
+  let best h _ = do
+        times <- mapM ((fst <$>) . checkHash file . flip B.snoc 0 . B.snoc h) [0..255]
+        let hash = B.snoc h $ snd $ maximum $ zip times [0..255]
+        print $ byteStringToHex hash
+        print $ take 5 $ sortOn (negate . fst) $ zip times [0..255]
+        return hash
+  initHash <- B.init <$> foldM best "" [1..19]
+  hash <- filterM ((snd <$>) . checkHash file) $ map (B.snoc initHash) [0..255]
+  return hash
+
+checkHash :: ByteString -> ByteString -> IO (POSIXTime, Bool)
+checkHash file hash = do
+  let pre = "http://localhost:8000/test?file="
+      sep = "&signature="
+      request = pre ++ (byteStringToHex file) ++ sep ++ (byteStringToHex hash)
   t0 <- getPOSIXTime
-  response <- simpleHTTP (getRequest "http://localhost:8000/test?file=0eff&signature=46b4ec586117154dacd49d664e5d63fdc88efb51")
+  response <- simpleHTTP (getRequest request)
   t1 <- getPOSIXTime
   (c,_,_) <- getResponseCode response
-  print $ c
-  print $ t1-t0
-
-  -- getPOSIXTime
+  return (t1 - t0, c == 2)
