@@ -184,20 +184,41 @@ main = ex31
 
 ex31 = do
   let file = ";user=admin;"
-  hash <- findHash file
-  print $ map byteStringToHex hash
+  (Just hash) <- findHash file
+  print $ byteStringToHex hash
 
-findHash :: ByteString -> IO [ByteString]
-findHash file = do
-  let best h _ = do
-        times <- mapM ((fst <$>) . checkHash file . flip B.snoc 0 . B.snoc h) [0..255]
-        let hash = B.snoc h $ snd $ maximum $ zip times [0..255]
-        print $ byteStringToHex hash
-        print $ take 5 $ sortOn (negate . fst) $ zip times [0..255]
-        return hash
-  initHash <- B.init <$> foldM best "" [1..19]
-  hash <- filterM ((snd <$>) . checkHash file) $ map (B.snoc initHash) [0..255]
-  return hash
+findHash :: ByteString -> IO (Maybe ByteString)
+findHash file = go 1 "" 0 0
+  where
+  getTime h i = do
+    let h' = B.snoc h i
+    (time, _) <- checkHash file (B.append h' "_")
+    return (time, h')
+  go 1 _ _ _ = do
+    times <- mapM (getTime "") [0..255]
+    let (tm, h) = maximum times
+        t = (sum (map fst times) - tm) /255
+        dt = tm - t
+    go 2 h dt t
+  go 21 h _ _ = do
+    sol <- filterM ((snd <$>) . checkHash file . B.snoc h) [0..255]
+    if null sol
+      then return Nothing
+      else return $ Just $ B.snoc h $ head sol
+  go i h dt t = do
+    timesSample <- mapM (getTime h) [0..4]
+    let sampleT = sum (map fst timesSample) / 5
+    print $ unwords $ [show i, byteStringToHex h]
+    print $ (sampleT, t, dt)
+    -- print $ take 5 $ map (\(t,h)->(t, byteStringToHex h)) $ timesSorted
+    if sampleT < t + dt
+      then return Nothing
+      else do
+        times <- mapM (getTime h) [5..255]
+        let timesSorted = sortOn (negate . fst) (timesSample ++ times)
+            t' = sum (map fst times) / 255
+        next <- mapM (\(_, h') -> go (i+1) h' dt t' ) timesSorted
+        return $ head $ filter (/= Nothing) next
 
 checkHash :: ByteString -> ByteString -> IO (POSIXTime, Bool)
 checkHash file hash = do
@@ -205,7 +226,7 @@ checkHash file hash = do
       sep = "&signature="
       request = pre ++ (byteStringToHex file) ++ sep ++ (byteStringToHex hash)
   t0 <- getPOSIXTime
-  response <- simpleHTTP (getRequest request)
+  response <- simpleHTTP (getRequest $! request)
   t1 <- getPOSIXTime
   (c,_,_) <- getResponseCode response
   return (t1 - t0, c == 2)
