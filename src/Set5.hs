@@ -179,7 +179,7 @@ ex36 = do
       email = "jie@mail.com"
       password = "super secret"
   -- S: salt, v
-  salt <- randomIO :: IO Integer
+  salt <- abs <$> randomIO :: IO Integer
   let xH = sha256 $ B.append (intToByteString salt) password
       x = read $ "0x" ++ (byteStringToHex xH) :: Integer
       v = expMod g x n
