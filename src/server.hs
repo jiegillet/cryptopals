@@ -40,7 +40,7 @@ insecureCompare "" _ = return False
 insecureCompare _ "" = return False
 insecureCompare h1 h2 = do
   -- threadDelay 50000 -- Ex31
-  threadDelay 20000 -- Ex32
+  threadDelay 5000 -- Ex32
   if B.head h1 == B.head h2
     then insecureCompare (B.tail h1) (B.tail h2)
     else return False

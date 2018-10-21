@@ -8,12 +8,14 @@ import qualified Data.ByteString.Lazy as B
 import qualified Data.ByteString.Lazy.Char8 as C
 import           System.Random
 import           Control.Exception
-import           Control.Monad (filterM, foldM)
+import           Control.Monad (filterM, foldM, (=<<))
 import           Test.QuickCheck (quickCheck)
 import           Data.List (sortOn)
 import           Data.Bits
-import           Network.HTTP
+import           Network.HTTP (simpleHTTP, getRequest, getResponseCode)
 import           Data.Time.Clock.POSIX
+import           Data.Map (Map, (!))
+import qualified Data.Map as M
 
 -- Ex 25
 
@@ -180,8 +182,6 @@ ex30 = do
 
 -- Ex 31: run ./server first
 
-main = ex31
-
 ex31 = do
   let file = ";user=admin;"
   (Just hash) <- findHash file
@@ -192,7 +192,7 @@ findHash file = go 1 "" 0 0
   where
   getTime h i = do
     let h' = B.snoc h i
-    (time, _) <- checkHash file (B.append h' "_")
+    (_, time) <- checkHash file (B.append h' "_")
     return (time, h')
   go 1 _ _ _ = do
     times <- mapM (getTime "") [0..255]
@@ -201,7 +201,7 @@ findHash file = go 1 "" 0 0
         dt = tm - t
     go 2 h dt t
   go 21 h _ _ = do
-    sol <- filterM ((snd <$>) . checkHash file . B.snoc h) [0..255]
+    sol <- filterM ((fst <$>) . checkHash file . B.snoc h) [0..255]
     if null sol
       then return Nothing
       else return $ Just $ B.snoc h $ head sol
@@ -220,7 +220,7 @@ findHash file = go 1 "" 0 0
         next <- mapM (\(_, h') -> go (i+1) h' dt t' ) timesSorted
         return $ head $ filter (/= Nothing) next
 
-checkHash :: ByteString -> ByteString -> IO (POSIXTime, Bool)
+checkHash :: ByteString -> ByteString -> IO (Bool, POSIXTime)
 checkHash file hash = do
   let pre = "http://localhost:8000/test?file="
       sep = "&signature="
@@ -229,4 +229,34 @@ checkHash file hash = do
   response <- simpleHTTP (getRequest $! request)
   t1 <- getPOSIXTime
   (c,_,_) <- getResponseCode response
-  return (t1 - t0, c == 2)
+  return (c == 2, t1 - t0)
+
+main = ex32
+
+ex32 = do
+  let file = ";user=admin;"
+  hash <- findHash' file
+  print $ byteStringToHex hash
+
+findHash' :: ByteString -> IO (ByteString)
+findHash' file = do
+  start <- mapM (getTime "") [0..255]
+  exploreMax $ M.fromList start
+  where
+  getTime h i = do
+    let h' = B.snoc h i
+    (_, t1) <- checkHash file (B.append h' "_")
+    (_, t2) <- checkHash file (B.append h' "_")
+    return (min t1 t2 / (realToFrac (sqrt $ fromIntegral $ B.length h')),  h')
+  exploreMax m = do
+    let (t, b) = M.findMax m
+    if B.length b == 19
+      then do
+        final <- mapM (checkHash file . B.snoc b) [0..255]
+        let x = map snd $ filter (fst . fst) $ zip final [0..]
+        if null x then exploreMax $ M.delete t m else return $ B.snoc b (head x)
+      else do
+        print $ byteStringToHex b
+        next <- mapM (getTime b) [0..255]
+        exploreMax $ M.union (M.delete t m) $ M.fromList next
+-- 06 da 59 02 4e d6 fa da 0a c2 15 e8 52 4e 0c d2 ba fb ff f4

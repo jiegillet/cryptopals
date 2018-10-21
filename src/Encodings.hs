@@ -15,7 +15,9 @@ module Encodings (ByteString, Int64, Word8, Word32, Word64,
                   hexXor,
                   xorB,
                   chunksOf,
-                  littleEndian
+                  littleEndian,
+                  intToByteString,
+                  byteStringToInt
                   ) where
 
 import           Data.ByteString.Lazy (ByteString)
@@ -26,6 +28,7 @@ import           Data.Word (Word8, Word32, Word64)
 import qualified Data.Map as M
 import           Numeric (showHex)
 import           Data.Bits (xor)
+import           Data.List (unfoldr)
 
 
 type Base64 = String
@@ -86,7 +89,6 @@ base64ToByteString = hexToByteString . base64ToHex
 byteStringToBase64 :: ByteString -> Base64
 byteStringToBase64 = hexToBase64 . byteStringToHex
 
-
 hexToByteString :: Hex -> ByteString
 hexToByteString = B.pack . map fromIntegral . val
   where val (h1:h2:rest) = (hexToInt M.! h1)*16 + (hexToInt M.! h2) : val rest
@@ -131,3 +133,11 @@ fromWord32 :: [Word32] -> ByteString
 fromWord32 = B.pack . concatMap (reverse . take 4 . toWord8)
   where toWord8 0 = repeat 0
         toWord8 n = let (q, r) = quotRem n 256 in fromIntegral r : toWord8 q
+
+intToByteString :: (Integral a) => a -> ByteString
+intToByteString = B.pack . map fromIntegral . reverse . unfoldr split
+  where split 0 = Nothing
+        split n = let (d, r) = divMod n 256 in Just (r, d)
+
+byteStringToInt :: (Integral a) => ByteString -> a
+byteStringToInt = B.foldl' (\n w -> 256 * n + fromIntegral w) 0
