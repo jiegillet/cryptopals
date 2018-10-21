@@ -50,7 +50,7 @@ generateParam = do
   (p', gen) <- randomR (1, p) <$> newStdGen
   let (a, gen') = randomR (1, p') gen
       (g, _) = randomR (1, p') gen'
-  return (a, p' , g)
+  return (a, p', g)
 
 encrypt :: Integer -> ByteString -> IO ByteString
 encrypt s msg = do
