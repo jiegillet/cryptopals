@@ -1,3 +1,14 @@
+# Ignore all
+*
+
+# Unignore all with extensions
+!*.*
+
+# Unignore all dirs
+!*/
+
+## Above lines to ignore files without extensions
+
 .DS_Store
 dist
 dist-*
